@@ -86,6 +86,8 @@ TrieNode::TrieNode(uint32_t type){
 	m_left = 0;
 	m_right = 0;
 	m_parent = 0;
+	m_contracthash=0;
+	m_bdhash=0;
 }
 
 //Destructor

@@ -92,69 +92,73 @@ evmc::bytes32 ExampleHost::get_storage(const evmc::address& addr, const evmc::by
    		name= addrc.ToString()+".db";
    		prevValue = get_storage(addr, key);
 
+   		if (account_exists(addr)){
+   			/* Open database */
+	   		rc = sqlite3_open(name.c_str(), &db);
+	   		if( rc ) {
+	      		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+	      		sqlite3_close(db);
+	      		return EVMC_STORAGE_UNCHANGED;
+	   		} 
+	   		if (prevValue==vacio)
+	   		{
+	   		    sql = "INSERT into STORAGE VALUES (?,?)";
+	            rc = sqlite3_prepare_v2(db, sql.c_str(), sql.size()+1,&ppStmt,NULL);
+	            if( rc != SQLITE_OK) {
+	            	fprintf(stderr, "prepare: %s\n", sqlite3_errmsg(db));
+	            	sqlite3_close(db);
+	            	return EVMC_STORAGE_UNCHANGED;
+	         	} 
+	            rc = sqlite3_bind_blob(ppStmt, 1, (void *)&key, 32, SQLITE_STATIC);
+	            if( rc != SQLITE_OK ) {
+	            	fprintf(stderr, "bind: %s\n", sqlite3_errmsg(db));
+	            	sqlite3_close(db);
+	            	return EVMC_STORAGE_UNCHANGED;
+	         	} 
+	            rc = sqlite3_bind_blob(ppStmt, 2, (void *)&value, 32, SQLITE_STATIC);
+	            if( rc != SQLITE_OK ) {
+	            	fprintf(stderr, "bind 2: %s\n", sqlite3_errmsg(db));
+	            	sqlite3_close(db);
+	            	return EVMC_STORAGE_UNCHANGED;
+	         	} 
+	         	rc = sqlite3_step(ppStmt);
+	         	if( rc != SQLITE_DONE ) {
+	            	fprintf(stderr, "step: %s\n", sqlite3_errmsg(db));
+	            	sqlite3_close(db);
+	            	return EVMC_STORAGE_UNCHANGED;
+	         	} 
+	         	rc = sqlite3_finalize(ppStmt);
+	         	if (rc == SQLITE_OK){
+	            	fprintf(stderr, "finalize: %s\n", sqlite3_errmsg(db));
+	            	sqlite3_close(db);
+	               	return EVMC_STORAGE_ADDED;
 
-   		/* Open database */
-   		rc = sqlite3_open(name.c_str(), &db);
-   		if( rc ) {
-      		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
-      		sqlite3_close(db);
-      		return EVMC_STORAGE_UNCHANGED;
-   		} 
-   		if (prevValue==vacio)
-   		{
-   		    sql = "INSERT into STORAGE VALUES (?,?)";
-            rc = sqlite3_prepare_v2(db, sql.c_str(), sql.size()+1,&ppStmt,NULL);
-            if( rc != SQLITE_OK) {
-            	fprintf(stderr, "prepare: %s\n", sqlite3_errmsg(db));
-            	sqlite3_close(db);
-            	return EVMC_STORAGE_UNCHANGED;
-         	} 
-            rc = sqlite3_bind_blob(ppStmt, 1, (void *)&key, 32, SQLITE_STATIC);
-            if( rc != SQLITE_OK ) {
-            	fprintf(stderr, "bind: %s\n", sqlite3_errmsg(db));
-            	sqlite3_close(db);
-            	return EVMC_STORAGE_UNCHANGED;
-         	} 
-            rc = sqlite3_bind_blob(ppStmt, 2, (void *)&value, 32, SQLITE_STATIC);
-            if( rc != SQLITE_OK ) {
-            	fprintf(stderr, "bind 2: %s\n", sqlite3_errmsg(db));
-            	sqlite3_close(db);
-            	return EVMC_STORAGE_UNCHANGED;
-         	} 
-         	rc = sqlite3_step(ppStmt);
-         	if( rc != SQLITE_DONE ) {
-            	fprintf(stderr, "step: %s\n", sqlite3_errmsg(db));
-            	sqlite3_close(db);
-            	return EVMC_STORAGE_UNCHANGED;
-         	} 
-         	rc = sqlite3_finalize(ppStmt);
-         	if (rc == SQLITE_OK){
-            	fprintf(stderr, "finalize: %s\n", sqlite3_errmsg(db));
-            	sqlite3_close(db);
-               	return EVMC_STORAGE_ADDED;
+	            }
+	   		}
+	   		if (prevValue==value)
+	   		{
+	   			sqlite3_close(db);
+	            return EVMC_STORAGE_UNCHANGED;
+	   		}else{
 
-            }
-   		}
-   		if (prevValue==value)
-   		{
-   			sqlite3_close(db);
-            return EVMC_STORAGE_UNCHANGED;
+	   			sql = "UPDATE STORAGE set VALUE = ?  WHERE KEY= ?";
+	   			sqlite3_prepare_v2(db, sql.c_str(), sql.size()+1,&ppStmt,NULL);
+	   			sqlite3_bind_blob(ppStmt, 1, (void *)&value, 32, SQLITE_STATIC);
+	   			sqlite3_bind_blob(ppStmt, 2, (void *)&key, 32, SQLITE_STATIC);
+	   			sqlite3_step(ppStmt);
+				rc = sqlite3_finalize(ppStmt);
+				if (rc == SQLITE_OK){
+					sqlite3_close(db);
+					return EVMC_STORAGE_MODIFIED;
+				}
+
+			sqlite3_close(db);
+	        return EVMC_STORAGE_UNCHANGED;
+	   		}
    		}else{
-
-   			sql = "UPDATE STORAGE set VALUE = ?  WHERE KEY= ?";
-   			sqlite3_prepare_v2(db, sql.c_str(), sql.size()+1,&ppStmt,NULL);
-   			sqlite3_bind_blob(ppStmt, 1, (void *)&value, 32, SQLITE_STATIC);
-   			sqlite3_bind_blob(ppStmt, 2, (void *)&key, 32, SQLITE_STATIC);
-   			sqlite3_step(ppStmt);
-			rc = sqlite3_finalize(ppStmt);
-			if (rc == SQLITE_OK){
-				sqlite3_close(db);
-				return EVMC_STORAGE_MODIFIED;
-			}
-
-		sqlite3_close(db);
-        return EVMC_STORAGE_UNCHANGED;
+   			return EVMC_STORAGE_UNCHANGED;
    		}
+	   		
    		
     }
 
@@ -183,6 +187,8 @@ evmc::bytes32 ExampleHost::get_storage(const evmc::address& addr, const evmc::by
     	{
 			return false;
     	}else{
+    		if (fnd->ContractHash()==0)
+    			return 0;
     		return ((fnd->Contract().size())/2);
     	}
     }
@@ -195,6 +201,8 @@ evmc::bytes32 ExampleHost::get_storage(const evmc::address& addr, const evmc::by
     	{
 			return {};
     	}else{
+    		if (fnd->ContractHash()==0)
+    			return {};
     		evmc_uint256be evmchash = static_cast<evmc_uint256be>(fnd->ContractHash());
     		return evmchash;
     	}
@@ -202,51 +210,65 @@ evmc::bytes32 ExampleHost::get_storage(const evmc::address& addr, const evmc::by
 
     size_t ExampleHost::copy_code(const evmc::address& addr,  size_t code_offset, uint8_t* buffer_data, size_t buffer_size) noexcept 
     {
-	
-	uint160_t addrc(addr);
-	TrieNode *fnd = TrieEngine::Find(addrc, raiz,0);
-	string contract;  /////// Se debe modificar para parsear dierecto la raiz del account y verificar que son los bits 
-	if (fnd==0)
-	{
-		return 0;
-	} else {
-		string contract = fnd->Contract();
-		size_t size = contract.size() / 2;
-		uint8_t * bytes = new uint8_t[size];
-		char x[3];
-		for (int i = 0, j = 0; (i < size) && (j < contract.size()); i++, j += 2) {
-			
-			memset(x, '\0', sizeof(char) * 3);
-			x[0] = contract[j];
-			x[1] = contract[j + 1];
-			bytes[i] = static_cast<uint8_t>(strtol(x, NULL, 16));
+
+		if (account_exists(addr))
+		{
+			uint160_t addrc(addr);
+			TrieNode *fnd = TrieEngine::Find(addrc, raiz,0);
+			string contract;  /////// Se debe modificar para parsear dierecto la raiz del account y verificar que son los bits 
+			if (fnd==0)
+			{
+				return 0;
+			} else {
+				if (fnd->ContractHash()==0)
+					return 0;
+				string contract = fnd->Contract();
+				size_t size = contract.size() / 2;
+				if(code_offset>size)
+					return 0;
+				uint8_t * bytes = new uint8_t[size];
+				char x[3];
+				for (int i = 0, j = 0; (i < size) && (j < contract.size()); i++, j += 2) {
+					
+					memset(x, '\0', sizeof(char) * 3);
+					x[0] = contract[j];
+					x[1] = contract[j + 1];
+					bytes[i] = static_cast<uint8_t>(strtol(x, NULL, 16));
+				}
+				memcpy(buffer_data, bytes +code_offset, sizeof(uint8_t) * MIN(buffer_size, size - code_offset));
+				return MIN(buffer_size, size - code_offset);
+				}
+		}else{
+			return 0;
 		}
-		memcpy(buffer_data, bytes +code_offset, sizeof(uint8_t) * MIN(buffer_size, size - code_offset));
-		return MIN(buffer_size, size - code_offset);
-		}
+
     }
 
     void ExampleHost::selfdestruct(const evmc::address& addr, const evmc::address& beneficiary) noexcept 
     {
-       	uint160_t addrc(addr), addrb(beneficiary);
-       	uint256_t hash_C;
-       	string hashS;
-       	TrieNode *fnd = TrieEngine::Find(addrc, raiz,0);
-		TrieNode *bfc = TrieEngine::Find(addrb, raiz,0);
-		hash_C = fnd->ContractHash();
-		
-		DB* db;
-		Options options;
-		options.create_if_missing = true;
-		Status sT = DB::Open(options, "Contract.db", &db); ////////////// hay que agregar la direccion exacta del la base de datos 
-		assert(sT.ok());
-		sT = db->Delete(WriteOptions(), hash_C.ToString()); 
-		delete db;
+       	
+		if (account_exists(addr) && account_exists(beneficiary))
+		{
+	       	uint160_t addrc(addr), addrb(beneficiary);
+	       	uint256_t hash_C;
+	       	string hashS;
+	       	TrieNode *fnd = TrieEngine::Find(addrc, raiz,0);
+			TrieNode *bfc = TrieEngine::Find(addrb, raiz,0);
+			hash_C = fnd->ContractHash();
+			
+			DB* db;
+			Options options;
+			options.create_if_missing = true;
+			Status sT = DB::Open(options, "Contract.db", &db); ////////////// hay que agregar la direccion exacta del la base de datos 
+			assert(sT.ok());
+			sT = db->Delete(WriteOptions(), hash_C.ToString()); 
+			delete db;
 
-		bfc->SetBalance(fnd->Balance()+bfc->Balance());
-		fnd->SetBalance(0x0);
-
-
+			bfc->SetBalance(fnd->Balance()+bfc->Balance());
+			fnd->SetBalance(0x0);
+		}else{
+			return;
+		}
     }
 
     evmc::result ExampleHost::call(const evmc_message& msg) noexcept 
